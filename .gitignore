@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Capacitor
+.capacitor/
+ios/App/Pods/
+ios/App/App/public/
+android/app/build/
+
+# Logs
+*.log
+npm-debug.log*
