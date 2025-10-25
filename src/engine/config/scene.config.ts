@@ -52,6 +52,17 @@ export const SelectionConfig = {
 } as const;
 
 /**
+ * Axis helper configuration
+ */
+export const AxisConfig = {
+  LENGTH: 5,
+  LINE_WIDTH: 2,
+  X_COLOR: 0xff5050,
+  Y_COLOR: 0x50ff50,
+  Z_COLOR: 0x5050ff,
+} as const;
+
+/**
  * Material configuration constants
  */
 export const MaterialConfig = {
@@ -64,6 +75,6 @@ export const MaterialConfig = {
  * Primitive spawn configuration
  */
 export const PrimitiveConfig = {
-  INITIAL_Y_POSITION: 1,
+  INITIAL_Y_POSITION: 0.5,
   SPAWN_RANGE: 4,
 } as const;

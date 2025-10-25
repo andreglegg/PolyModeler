@@ -20,7 +20,7 @@ export class PolyModeler {
     // Initialize managers
     this.sceneManager = new SceneManager(container);
     this.modelManager = new ModelManager();
-    this.selectionManager = new SelectionManager();
+    this.selectionManager = new SelectionManager(this.sceneManager.getTransformControls());
 
     // Initialize input handler with selection callback
     this.inputHandler = new InputHandler(
@@ -38,8 +38,11 @@ export class PolyModeler {
    */
   private start(): void {
     // Add initial cube
-    const cube = this.addPrimitive('box');
-    this.selectModel(cube);
+    this.addPrimitive('box', {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
 
     // Start animation loop
     this.animate();
@@ -75,8 +78,11 @@ export class PolyModeler {
   /**
    * Add a primitive shape to the scene
    */
-  public addPrimitive(type: PrimitiveType): THREE.Mesh {
-    const mesh = this.modelManager.createPrimitive(type);
+  public addPrimitive(
+    type: PrimitiveType,
+    position?: THREE.Vector3 | { x: number; y: number; z: number }
+  ): THREE.Mesh {
+    const mesh = this.modelManager.createPrimitive(type, position);
     this.sceneManager.add(mesh);
     return mesh;
   }
@@ -140,6 +146,17 @@ export class PolyModeler {
    */
   public scaleSelected(delta: number): void {
     this.selectionManager.scale(delta);
+  }
+
+  /**
+   * Switch transform gizmo mode
+   */
+  public setTransformMode(mode: 'translate' | 'rotate' | 'scale'): void {
+    this.selectionManager.setTransformMode(mode);
+  }
+
+  public setTransformEnabled(enabled: boolean): void {
+    this.selectionManager.setTransformEnabled(enabled);
   }
 
   /**

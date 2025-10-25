@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { Axis } from '../types/primitives';
 import { EventNames } from '../types/events';
 import { SelectionConfig } from '../config/scene.config';
@@ -10,6 +11,12 @@ import { SelectionConfig } from '../config/scene.config';
 export class SelectionManager {
   private selectedModel: THREE.Mesh | null = null;
   private selectionBox: THREE.BoxHelper | null = null;
+  private transformControls: TransformControls;
+  private transformEnabled = false;
+
+  constructor(transformControls: TransformControls) {
+    this.transformControls = transformControls;
+  }
 
   /**
    * Select a model and update visual feedback
@@ -24,6 +31,11 @@ export class SelectionManager {
     if (this.selectedModel) {
       this.selectionBox = new THREE.BoxHelper(this.selectedModel, SelectionConfig.SELECTION_COLOR);
       scene.add(this.selectionBox);
+      if (this.transformEnabled) {
+        this.transformControls.attach(this.selectedModel);
+      } else {
+        this.transformControls.detach();
+      }
     }
 
     // Emit selection event
@@ -38,6 +50,9 @@ export class SelectionManager {
       scene.remove(this.selectionBox);
       this.selectionBox = null;
     }
+
+    this.transformControls.detach();
+    this.selectedModel = null;
   }
 
   /**
@@ -98,6 +113,28 @@ export class SelectionManager {
     if (this.selectedModel) {
       const material = this.selectedModel.material as THREE.MeshStandardMaterial;
       material.color.set(color);
+    }
+  }
+
+  /**
+   * Switch the transform gizmo mode
+   */
+  public setTransformMode(mode: 'translate' | 'rotate' | 'scale'): void {
+    this.transformControls.setMode(mode);
+  }
+
+  public setTransformEnabled(enabled: boolean): void {
+    this.transformEnabled = enabled;
+
+    if (!this.selectedModel) {
+      this.transformControls.detach();
+      return;
+    }
+
+    if (enabled) {
+      this.transformControls.attach(this.selectedModel);
+    } else {
+      this.transformControls.detach();
     }
   }
 

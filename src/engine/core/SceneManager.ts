@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { SceneConfig, CameraConfig, LightConfig, ControlsConfig } from '../config/scene.config';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { SceneConfig, CameraConfig, LightConfig, ControlsConfig, AxisConfig } from '../config/scene.config';
 
 /**
  * Manages the Three.js scene, camera, renderer, and controls
@@ -11,6 +12,7 @@ export class SceneManager {
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
   private controls: OrbitControls;
+  private transformControls: TransformControls;
   private container: HTMLElement;
 
   constructor(container: HTMLElement) {
@@ -19,9 +21,11 @@ export class SceneManager {
     this.camera = this.createCamera();
     this.renderer = this.createRenderer();
     this.controls = this.createControls();
+    this.transformControls = this.createTransformControls();
 
     this.setupLights();
     this.setupGrid();
+    this.setupAxes();
     this.setupResizeHandler();
   }
 
@@ -66,6 +70,16 @@ export class SceneManager {
     return controls;
   }
 
+  private createTransformControls(): TransformControls {
+    const transformControls = new TransformControls(this.camera, this.renderer.domElement);
+    transformControls.addEventListener('dragging-changed', (event) => {
+      const isDragging = Boolean((event as { value: unknown }).value);
+      this.controls.enabled = !isDragging;
+    });
+    this.scene.add(transformControls.getHelper());
+    return transformControls;
+  }
+
   private setupLights(): void {
     const ambientLight = new THREE.AmbientLight(
       LightConfig.AMBIENT_COLOR,
@@ -96,6 +110,40 @@ export class SceneManager {
       SceneConfig.GRID_COLOR_2
     );
     this.scene.add(grid);
+  }
+
+  private setupAxes(): void {
+    const axesGroup = new THREE.Group();
+
+    const createAxis = (color: number, direction: THREE.Vector3): void => {
+      const positive = direction.clone().setLength(AxisConfig.LENGTH);
+      const negative = direction.clone().setLength(AxisConfig.LENGTH).multiplyScalar(-1);
+
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        negative,
+        new THREE.Vector3(0, 0, 0),
+        positive,
+      ]);
+      const material = new THREE.LineBasicMaterial({ color });
+      const line = new THREE.Line(geometry, material);
+      axesGroup.add(line);
+
+      const arrow = new THREE.ArrowHelper(
+        direction.clone().normalize(),
+        new THREE.Vector3(0, 0, 0),
+        AxisConfig.LENGTH,
+        color,
+        AxisConfig.LENGTH * 0.08,
+        AxisConfig.LENGTH * 0.04
+      );
+      axesGroup.add(arrow);
+    };
+
+    createAxis(AxisConfig.X_COLOR, new THREE.Vector3(1, 0, 0));
+    createAxis(AxisConfig.Y_COLOR, new THREE.Vector3(0, 1, 0));
+    createAxis(AxisConfig.Z_COLOR, new THREE.Vector3(0, 0, 1));
+
+    this.scene.add(axesGroup);
   }
 
   private setupResizeHandler(): void {
@@ -149,5 +197,12 @@ export class SceneManager {
    */
   public getScene(): THREE.Scene {
     return this.scene;
+  }
+
+  /**
+   * Get the shared TransformControls instance
+   */
+  public getTransformControls(): TransformControls {
+    return this.transformControls;
   }
 }

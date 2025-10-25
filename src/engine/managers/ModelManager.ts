@@ -32,12 +32,15 @@ export class ModelManager {
   /**
    * Create and add a primitive mesh to the scene
    */
-  public createPrimitive(type: PrimitiveType): THREE.Mesh {
+  public createPrimitive(
+    type: PrimitiveType,
+    position?: THREE.Vector3 | { x: number; y: number; z: number }
+  ): THREE.Mesh {
     const geometry = GeometryFactory.create(type);
     const material = this.createMaterial();
     const mesh = new THREE.Mesh(geometry, material);
 
-    this.configureMesh(mesh);
+    this.configureMesh(mesh, position);
     this.models.push(mesh);
 
     return mesh;
@@ -54,12 +57,20 @@ export class ModelManager {
     });
   }
 
-  private configureMesh(mesh: THREE.Mesh): void {
+  private configureMesh(
+    mesh: THREE.Mesh,
+    position?: THREE.Vector3 | { x: number; y: number; z: number }
+  ): void {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = PrimitiveConfig.INITIAL_Y_POSITION;
-    mesh.position.x = (Math.random() - 0.5) * PrimitiveConfig.SPAWN_RANGE;
-    mesh.position.z = (Math.random() - 0.5) * PrimitiveConfig.SPAWN_RANGE;
+
+    if (position) {
+      mesh.position.set(position.x, position.y, position.z);
+    } else {
+      mesh.position.y = PrimitiveConfig.INITIAL_Y_POSITION;
+      mesh.position.x = (Math.random() - 0.5) * PrimitiveConfig.SPAWN_RANGE;
+      mesh.position.z = (Math.random() - 0.5) * PrimitiveConfig.SPAWN_RANGE;
+    }
   }
 
   /**
