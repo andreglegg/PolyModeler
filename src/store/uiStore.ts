@@ -12,6 +12,7 @@ export interface UIState {
   hasSelection: boolean;
   transformEnabled: boolean;
   rightPanelVisible: boolean;
+  hierarchyCollapsed: boolean;
   setTransformMode: (mode: TransformMode) => void;
   togglePanel: (panel: Exclude<UIPanel, null>) => void;
   closePanels: () => void;
@@ -23,6 +24,7 @@ export interface UIState {
   setTransformEnabled: (enabled: boolean) => void;
   toggleRightPanel: () => void;
   setRightPanelVisible: (visible: boolean) => void;
+  toggleHierarchyCollapsed: () => void;
 }
 
 export const useUIStore = create(
@@ -34,6 +36,7 @@ export const useUIStore = create(
     hasSelection: false,
     transformEnabled: false,
     rightPanelVisible: true,
+    hierarchyCollapsed: false,
     setTransformMode: (mode) => {
       set({
         transformMode: mode,
@@ -84,6 +87,9 @@ export const useUIStore = create(
     },
     setRightPanelVisible: (visible) => {
       set({ rightPanelVisible: visible });
+    },
+    toggleHierarchyCollapsed: () => {
+      set((state) => ({ hierarchyCollapsed: !state.hierarchyCollapsed }));
     },
   }))
 );

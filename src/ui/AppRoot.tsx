@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import * as THREE from 'three';
 import type { Mesh } from 'three';
 import { PolyModeler, EventNames, type ModelSelectedEvent, type PrimitiveType } from '../engine';
@@ -52,13 +60,28 @@ export const AppRoot = () => {
 
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [materialColor, setMaterialColor] = useState<string>('#ffffff');
-  const [hierarchyItems, setHierarchyItems] = useState<Array<{ id: string; label: string }>>([]);
+  const [materialSupportsStandard, setMaterialSupportsStandard] = useState<boolean>(false);
+  const [materialProps, setMaterialProps] = useState({
+    roughness: 0.5,
+    metalness: 0.5,
+    emissive: '#000000',
+    emissiveIntensity: 1,
+  });
+  type HierarchyNode = {
+    id: string;
+    label: string;
+    children: HierarchyNode[];
+  };
+  const [hierarchyTree, setHierarchyTree] = useState<HierarchyNode[]>([]);
+  const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({});
+  const hierarchyCollapsed = useUIStore((state) => state.hierarchyCollapsed);
+  const toggleHierarchyCollapsedStore = useUIStore((state) => state.toggleHierarchyCollapsed);
   const [selectedMeshId, setSelectedMeshId] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState({
     instructions: false,
     properties: false,
     materials: false,
-    hierarchy: false,
+    hierarchy: hierarchyCollapsed,
   });
   const [selectionProperties, setSelectionProperties] = useState<
     | null
@@ -75,6 +98,7 @@ export const AppRoot = () => {
         setSelectionProperties(null);
         setMaterialColor('#ffffff');
         setSelectedColor(null);
+        setMaterialSupportsStandard(false);
         setSelectedMeshId(null);
         return;
       }
@@ -104,6 +128,25 @@ export const AppRoot = () => {
         setSelectedColor(hex);
       }
 
+      const standardMaterial = model.material as THREE.MeshStandardMaterial;
+      if (standardMaterial && 'roughness' in standardMaterial) {
+        setMaterialSupportsStandard(true);
+        setMaterialProps({
+          roughness: Number(standardMaterial.roughness.toFixed(2)),
+          metalness: Number(standardMaterial.metalness.toFixed(2)),
+          emissive: `#${standardMaterial.emissive.getHexString()}`,
+          emissiveIntensity: Number(standardMaterial.emissiveIntensity.toFixed(2)),
+        });
+      } else {
+        setMaterialSupportsStandard(false);
+        setMaterialProps({
+          roughness: 0.5,
+          metalness: 0.5,
+          emissive: '#000000',
+          emissiveIntensity: 1,
+        });
+      }
+
       setSelectedMeshId(model.uuid);
     },
     []
@@ -111,14 +154,34 @@ export const AppRoot = () => {
 
   const syncHierarchy = useCallback(() => {
     const models = polyModelerRef.current?.getAllModels() ?? [];
-    const items = models.map((mesh) => {
-      const baseLabel = mesh.name || mesh.geometry?.type || 'Mesh';
-      return {
-        id: mesh.uuid,
-        label: baseLabel.replace(/Geometry$/u, ''),
+
+    const buildTree = (meshes: Mesh[]): HierarchyNode[] =>
+      meshes.map((mesh) => {
+        const baseLabel = mesh.name || mesh.geometry?.type || 'Mesh';
+        const cleanLabel = baseLabel.replace(/Geometry$/u, '');
+        const children = (mesh.children as Mesh[]).filter((child) => child.isMesh);
+        return {
+          id: mesh.uuid,
+          label: cleanLabel,
+          children: buildTree(children),
+        };
+      });
+
+    const tree = buildTree(models);
+    setHierarchyTree(tree);
+    setCollapsedNodes((prev) => {
+      const next = { ...prev };
+      const register = (nodes: HierarchyNode[]) => {
+        nodes.forEach((node) => {
+          if (!(node.id in next)) {
+            next[node.id] = false;
+          }
+          register(node.children);
+        });
       };
+      register(tree);
+      return next;
     });
-    setHierarchyItems(items);
   }, []);
 
   const handlePropertyInput = useCallback(
@@ -220,6 +283,10 @@ export const AppRoot = () => {
   }, [updateSelectionProperties]);
 
   useEffect(() => {
+    setCollapsedSections((prev) => ({ ...prev, hierarchy: hierarchyCollapsed }));
+  }, [hierarchyCollapsed]);
+
+  useEffect(() => {
     const handleDocumentPointerDown = (event: PointerEvent): void => {
       if (!useUIStore.getState().transformMenuOpen) {
         return;
@@ -302,6 +369,25 @@ export const AppRoot = () => {
     setWireframe(checked);
   };
 
+  const handleMaterialPropChange = (
+    prop: 'roughness' | 'metalness' | 'emissiveIntensity',
+    value: number
+  ): void => {
+    setMaterialProps((prev) => ({ ...prev, [prop]: value }));
+    if (prop === 'roughness') {
+      polyModelerRef.current?.setMaterialRoughness(value);
+    } else if (prop === 'metalness') {
+      polyModelerRef.current?.setMaterialMetalness(value);
+    } else {
+      polyModelerRef.current?.setMaterialEmissiveIntensity(value);
+    }
+  };
+
+  const handleEmissiveColorChange = (color: string): void => {
+    setMaterialProps((prev) => ({ ...prev, emissive: color }));
+    polyModelerRef.current?.setMaterialEmissive(color);
+  };
+
   const handleDelete = (): void => {
     polyModelerRef.current?.deleteSelected();
     closeAll();
@@ -318,10 +404,86 @@ export const AppRoot = () => {
 
   const handleHierarchySelect = (id: string): void => {
     polyModelerRef.current?.selectModelById(id);
+    setCollapsedNodes((prev) => {
+      const next = { ...prev };
+      const expandPath = (nodes: HierarchyNode[]): boolean => {
+        for (const node of nodes) {
+          if (node.id === id) {
+            return true;
+          }
+          if (expandPath(node.children)) {
+            next[node.id] = false;
+            return true;
+          }
+        }
+        return false;
+      };
+      expandPath(hierarchyTree);
+      return next;
+    });
   };
+
+  const handleHierarchyToggleNode = (id: string): void => {
+    setCollapsedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const renderHierarchyNodes = (nodes: HierarchyNode[]): ReactNode =>
+    nodes.map((node) => {
+      const hasChildren = node.children.length > 0;
+      const collapsed = collapsedNodes[node.id];
+      return (
+        <li key={node.id}>
+          <div className={`hierarchy-item-row ${node.id === selectedMeshId ? 'active' : ''}`}>
+            {hasChildren ? (
+              <button
+                type="button"
+                className="hierarchy-toggle"
+                onClick={() => handleHierarchyToggleNode(node.id)}
+              >
+                {collapsed ? '▸' : '▾'}
+              </button>
+            ) : (
+              <span className="hierarchy-toggle placeholder" />
+            )}
+            <button
+              type="button"
+              className="hierarchy-label"
+              onClick={() => handleHierarchySelect(node.id)}
+            >
+              {node.label}
+            </button>
+            {hasChildren ? <span className="hierarchy-count">{node.children.length}</span> : null}
+            <div className="hierarchy-actions">
+              <button
+                type="button"
+                className="hierarchy-action"
+                disabled
+                title="Rename (coming soon)"
+              >
+                ✎
+              </button>
+              <button
+                type="button"
+                className="hierarchy-action"
+                disabled
+                title="Duplicate (coming soon)"
+              >
+                ⧉
+              </button>
+            </div>
+          </div>
+          {hasChildren && !collapsed ? (
+            <ul className="hierarchy-list nested">{renderHierarchyNodes(node.children)}</ul>
+          ) : null}
+        </li>
+      );
+    });
 
   const toggleSection = (section: keyof typeof collapsedSections): void => {
     setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+    if (section === 'hierarchy') {
+      toggleHierarchyCollapsedStore();
+    }
   };
 
   return (
@@ -527,7 +689,7 @@ export const AppRoot = () => {
               </button>
               <div className={`section-body ${collapsedSections.materials ? 'collapsed' : ''}`}>
                 <div className="property-group">
-                  <span className="property-label">Appearance</span>
+                  <span className="property-label">Base</span>
                   <label className="material-row">
                     <span>Color</span>
                     <input
@@ -546,33 +708,101 @@ export const AppRoot = () => {
                     <span>Wireframe</span>
                   </label>
                 </div>
+
+                <div className="property-group">
+                  <span className="property-label">Physical</span>
+                  {materialSupportsStandard ? (
+                    <>
+                      <label className="material-slider">
+                        <div className="material-slider-header">
+                          <span>Roughness</span>
+                          <span>{materialProps.roughness.toFixed(2)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={materialProps.roughness}
+                          onChange={(event) =>
+                            handleMaterialPropChange('roughness', Number(event.target.value))
+                          }
+                        />
+                      </label>
+                      <label className="material-slider">
+                        <div className="material-slider-header">
+                          <span>Metalness</span>
+                          <span>{materialProps.metalness.toFixed(2)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={materialProps.metalness}
+                          onChange={(event) =>
+                            handleMaterialPropChange('metalness', Number(event.target.value))
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <p className="panel-empty">
+                      Advanced material properties require MeshStandardMaterial
+                    </p>
+                  )}
+                </div>
+
+                <div className="property-group">
+                  <span className="property-label">Emissive</span>
+                  {materialSupportsStandard ? (
+                    <>
+                      <label className="material-row">
+                        <span>Color</span>
+                        <input
+                          type="color"
+                          value={materialProps.emissive}
+                          onChange={(event) => handleEmissiveColorChange(event.target.value)}
+                        />
+                      </label>
+                      <label className="material-slider">
+                        <div className="material-slider-header">
+                          <span>Intensity</span>
+                          <span>{materialProps.emissiveIntensity.toFixed(2)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={5}
+                          step={0.05}
+                          value={materialProps.emissiveIntensity}
+                          onChange={(event) =>
+                            handleMaterialPropChange('emissiveIntensity', Number(event.target.value))
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <p className="panel-empty">Emissive settings unavailable for this material</p>
+                  )}
+                </div>
               </div>
             </section>
 
-            <section className="panel-section">
-              <button
-                className="section-header"
-                onClick={() => toggleSection('hierarchy')}
-                type="button"
-              >
-                <span>Hierarchy</span>
-                <span className={`section-arrow ${collapsedSections.hierarchy ? 'collapsed' : ''}`}>
-                  ▾
-                </span>
-              </button>
+          <section className="panel-section">
+            <button
+              className="section-header"
+              onClick={() => toggleSection('hierarchy')}
+              type="button"
+            >
+              <span>Hierarchy</span>
+              <span className={`section-arrow ${collapsedSections.hierarchy ? 'collapsed' : ''}`}>
+                ▾
+              </span>
+            </button>
               <div className={`section-body ${collapsedSections.hierarchy ? 'collapsed' : ''}`}>
-                {hierarchyItems.length > 0 ? (
-                  <ul className="hierarchy-list">
-                    {hierarchyItems.map((item) => (
-                      <li
-                        key={item.id}
-                        className={`hierarchy-item ${item.id === selectedMeshId ? 'active' : ''}`}
-                        onClick={() => handleHierarchySelect(item.id)}
-                      >
-                        {item.label}
-                      </li>
-                    ))}
-                  </ul>
+                {hierarchyTree.length > 0 ? (
+                  <ul className="hierarchy-list root">{renderHierarchyNodes(hierarchyTree)}</ul>
                 ) : (
                   <p className="panel-empty">Scene hierarchy coming soon</p>
                 )}

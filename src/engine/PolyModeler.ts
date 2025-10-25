@@ -124,6 +124,54 @@ export class PolyModeler {
     this.selectionManager.setColor(color);
   }
 
+  public setMaterialRoughness(value: number): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    const material = selected.material as THREE.Material & { roughness?: number };
+    if (typeof material.roughness === 'number') {
+      material.roughness = value;
+      this.onSelectionUpdated?.(selected);
+    }
+  }
+
+  public setMaterialMetalness(value: number): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    const material = selected.material as THREE.Material & { metalness?: number };
+    if (typeof material.metalness === 'number') {
+      material.metalness = value;
+      this.onSelectionUpdated?.(selected);
+    }
+  }
+
+  public setMaterialEmissive(color: string): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    const material = selected.material as THREE.Material & { emissive?: THREE.Color };
+    if (material.emissive instanceof THREE.Color) {
+      material.emissive.set(color);
+      this.onSelectionUpdated?.(selected);
+    }
+  }
+
+  public setMaterialEmissiveIntensity(value: number): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    const material = selected.material as THREE.Material & { emissiveIntensity?: number };
+    if (typeof material.emissiveIntensity === 'number') {
+      material.emissiveIntensity = value;
+      this.onSelectionUpdated?.(selected);
+    }
+  }
+
   /**
    * Toggle wireframe mode for all models
    */
