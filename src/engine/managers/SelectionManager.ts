@@ -10,12 +10,19 @@ import { SelectionConfig } from '../config/scene.config';
  */
 export class SelectionManager {
   private selectedModel: THREE.Mesh | null = null;
-  private selectionBox: THREE.BoxHelper | null = null;
+  private selectionOverlay: THREE.LineSegments | null = null;
   private transformControls: TransformControls;
   private transformEnabled = false;
+  private onSelectionUpdated?: (model: THREE.Mesh | null) => void;
 
   constructor(transformControls: TransformControls) {
     this.transformControls = transformControls;
+
+    this.transformControls.addEventListener('change', () => {
+      if (this.selectedModel) {
+        this.onSelectionUpdated?.(this.selectedModel);
+      }
+    });
   }
 
   /**
@@ -29,8 +36,8 @@ export class SelectionManager {
 
     // Add new selection box
     if (this.selectedModel) {
-      this.selectionBox = new THREE.BoxHelper(this.selectedModel, SelectionConfig.SELECTION_COLOR);
-      scene.add(this.selectionBox);
+      this.selectionOverlay = this.createOutline(this.selectedModel);
+      scene.add(this.selectionOverlay);
       if (this.transformEnabled) {
         this.transformControls.attach(this.selectedModel);
       } else {
@@ -40,27 +47,31 @@ export class SelectionManager {
 
     // Emit selection event
     this.emitSelectionEvent();
+    this.onSelectionUpdated?.(this.selectedModel);
   }
 
   /**
    * Clear the current selection
    */
   private clearSelection(scene: THREE.Scene): void {
-    if (this.selectionBox) {
-      scene.remove(this.selectionBox);
-      this.selectionBox = null;
+    if (this.selectionOverlay) {
+      scene.remove(this.selectionOverlay);
+      this.selectionOverlay.geometry.dispose();
+      (this.selectionOverlay.material as THREE.Material).dispose();
+      this.selectionOverlay = null;
     }
 
     this.transformControls.detach();
     this.selectedModel = null;
+    this.onSelectionUpdated?.(null);
   }
 
   /**
    * Update the selection box (call every frame)
    */
   public update(): void {
-    if (this.selectionBox && this.selectedModel) {
-      this.selectionBox.update();
+    if (this.selectionOverlay && this.selectedModel) {
+      this.updateOutline(this.selectionOverlay, this.selectedModel);
     }
   }
 
@@ -136,6 +147,12 @@ export class SelectionManager {
     } else {
       this.transformControls.detach();
     }
+
+    this.onSelectionUpdated?.(this.selectedModel);
+  }
+
+  public setSelectionUpdateHandler(handler: (model: THREE.Mesh | null) => void): void {
+    this.onSelectionUpdated = handler;
   }
 
   /**
@@ -147,5 +164,26 @@ export class SelectionManager {
         detail: { model: this.selectedModel },
       })
     );
+  }
+
+  private createOutline(mesh: THREE.Mesh): THREE.LineSegments {
+    const geometry = new THREE.EdgesGeometry(mesh.geometry, 15);
+    const material = new THREE.LineBasicMaterial({
+      color: SelectionConfig.SELECTION_COLOR,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
+    });
+    const outline = new THREE.LineSegments(geometry, material);
+    outline.matrixAutoUpdate = false;
+    outline.renderOrder = 9999;
+    this.updateOutline(outline, mesh);
+    return outline;
+  }
+
+  private updateOutline(outline: THREE.LineSegments, mesh: THREE.Mesh): void {
+    outline.matrix.copy(mesh.matrixWorld);
+    outline.updateMatrixWorld(true);
   }
 }

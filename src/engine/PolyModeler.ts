@@ -16,11 +16,15 @@ export class PolyModeler {
   private selectionManager: SelectionManager;
   private inputHandler: InputHandler;
 
-  constructor(container: HTMLElement) {
+  constructor(
+    container: HTMLElement,
+    private onSelectionUpdated?: (model: THREE.Mesh | null) => void
+  ) {
     // Initialize managers
     this.sceneManager = new SceneManager(container);
     this.modelManager = new ModelManager();
     this.selectionManager = new SelectionManager(this.sceneManager.getTransformControls());
+    this.selectionManager.setSelectionUpdateHandler((model) => this.onSelectionUpdated?.(model));
 
     // Initialize input handler with selection callback
     this.inputHandler = new InputHandler(
@@ -157,6 +161,44 @@ export class PolyModeler {
 
   public setTransformEnabled(enabled: boolean): void {
     this.selectionManager.setTransformEnabled(enabled);
+  }
+
+  public setPosition(axis: Axis, value: number): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    selected.position[axis] = value;
+    this.onSelectionUpdated?.(selected);
+  }
+
+  public setRotation(axis: Axis, valueDegrees: number): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    const radians = (valueDegrees * Math.PI) / 180;
+    selected.rotation[axis] = radians;
+    this.onSelectionUpdated?.(selected);
+  }
+
+  public setScale(axis: Axis, value: number): void {
+    const selected = this.selectionManager.getSelected();
+    if (!selected) {
+      return;
+    }
+    const clamped = Math.max(0.1, value);
+    selected.scale[axis] = clamped;
+    this.onSelectionUpdated?.(selected);
+  }
+
+  public getAllModels(): THREE.Mesh[] {
+    return this.modelManager.getAllModels();
+  }
+
+  public selectModelById(id: string): void {
+    const mesh = this.modelManager.getAllModels().find((model) => model.uuid === id) ?? null;
+    this.selectModel(mesh);
   }
 
   /**

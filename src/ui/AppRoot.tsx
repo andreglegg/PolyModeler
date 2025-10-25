@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import * as THREE from 'three';
+import type { Mesh } from 'three';
 import { PolyModeler, EventNames, type ModelSelectedEvent, type PrimitiveType } from '../engine';
 import { useUIStore } from '../store/uiStore';
 
@@ -45,8 +47,125 @@ export const AppRoot = () => {
   const setHasSelection = useUIStore((state) => state.setHasSelection);
   const transformEnabled = useUIStore((state) => state.transformEnabled);
   const setTransformEnabled = useUIStore((state) => state.setTransformEnabled);
+  const rightPanelVisible = useUIStore((state) => state.rightPanelVisible);
+  const toggleRightPanel = useUIStore((state) => state.toggleRightPanel);
 
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [materialColor, setMaterialColor] = useState<string>('#ffffff');
+  const [hierarchyItems, setHierarchyItems] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedMeshId, setSelectedMeshId] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState({
+    instructions: false,
+    properties: false,
+    materials: false,
+    hierarchy: false,
+  });
+  const [selectionProperties, setSelectionProperties] = useState<
+    | null
+    | {
+        position: { x: number; y: number; z: number };
+        rotation: { x: number; y: number; z: number };
+        scale: { x: number; y: number; z: number };
+      }
+  >(null);
+
+  const updateSelectionProperties = useCallback(
+    (model: Mesh | null) => {
+      if (!model) {
+        setSelectionProperties(null);
+        setMaterialColor('#ffffff');
+        setSelectedColor(null);
+        setSelectedMeshId(null);
+        return;
+      }
+
+      setSelectionProperties({
+        position: {
+          x: Number(model.position.x.toFixed(2)),
+          y: Number(model.position.y.toFixed(2)),
+          z: Number(model.position.z.toFixed(2)),
+        },
+        rotation: {
+          x: Number(((model.rotation.x * 180) / Math.PI).toFixed(1)),
+          y: Number(((model.rotation.y * 180) / Math.PI).toFixed(1)),
+          z: Number(((model.rotation.z * 180) / Math.PI).toFixed(1)),
+        },
+        scale: {
+          x: Number(model.scale.x.toFixed(2)),
+          y: Number(model.scale.y.toFixed(2)),
+          z: Number(model.scale.z.toFixed(2)),
+        },
+      });
+
+      const material = model.material as THREE.Material & { color?: { getHexString: () => string } };
+      if ('color' in material && material.color) {
+        const hex = `#${material.color.getHexString()}`;
+        setMaterialColor(hex);
+        setSelectedColor(hex);
+      }
+
+      setSelectedMeshId(model.uuid);
+    },
+    []
+  );
+
+  const syncHierarchy = useCallback(() => {
+    const models = polyModelerRef.current?.getAllModels() ?? [];
+    const items = models.map((mesh) => {
+      const baseLabel = mesh.name || mesh.geometry?.type || 'Mesh';
+      return {
+        id: mesh.uuid,
+        label: baseLabel.replace(/Geometry$/u, ''),
+      };
+    });
+    setHierarchyItems(items);
+  }, []);
+
+  const handlePropertyInput = useCallback(
+    (
+      group: 'position' | 'rotation' | 'scale',
+      axis: 'x' | 'y' | 'z',
+      value: string
+    ) => {
+      const numericValue = Number(value);
+      if (Number.isNaN(numericValue)) {
+        return;
+      }
+
+      const selected = polyModelerRef.current?.getSelectedModel();
+      if (!selected) {
+        return;
+      }
+
+      setSelectionProperties((prev) => {
+        if (!prev) {
+          return prev;
+        }
+
+        const next = {
+          position: { ...prev.position },
+          rotation: { ...prev.rotation },
+          scale: { ...prev.scale },
+        };
+
+        next[group][axis] = numericValue;
+        return next;
+      });
+
+      if (group === 'position') {
+        selected.position[axis] = numericValue;
+      } else if (group === 'rotation') {
+        const radians = (numericValue * Math.PI) / 180;
+        selected.rotation[axis] = radians;
+      } else {
+        const clamped = Math.max(0.1, numericValue);
+        selected.scale[axis] = clamped;
+      }
+
+      updateSelectionProperties(selected);
+    },
+    [updateSelectionProperties]
+  );
 
   useEffect(() => {
     if (!canvasRef.current) {
@@ -55,14 +174,15 @@ export const AppRoot = () => {
 
     // Clean canvas container before initializing renderer to avoid duplicates in dev mode.
     canvasRef.current.innerHTML = '';
-    const polyModeler = new PolyModeler(canvasRef.current);
+    const polyModeler = new PolyModeler(canvasRef.current, updateSelectionProperties);
     polyModelerRef.current = polyModeler;
+    syncHierarchy();
 
     return () => {
       polyModelerRef.current = null;
       canvasRef.current?.replaceChildren();
     };
-  }, []);
+  }, [syncHierarchy, updateSelectionProperties]);
 
   useEffect(() => {
     if (!polyModelerRef.current) {
@@ -88,14 +208,16 @@ export const AppRoot = () => {
   useEffect(() => {
     const handleModelSelected = (event: Event): void => {
       const modelEvent = event as ModelSelectedEvent;
-      setHasSelection(Boolean(modelEvent.detail?.model));
+      const model = modelEvent.detail?.model ?? null;
+      setHasSelection(Boolean(model));
+      updateSelectionProperties(model as Mesh | null);
     };
 
     window.addEventListener(EventNames.MODEL_SELECTED, handleModelSelected as EventListener);
     return () => {
       window.removeEventListener(EventNames.MODEL_SELECTED, handleModelSelected as EventListener);
     };
-  }, []);
+  }, [updateSelectionProperties]);
 
   useEffect(() => {
     const handleDocumentPointerDown = (event: PointerEvent): void => {
@@ -138,9 +260,10 @@ export const AppRoot = () => {
       return;
     }
 
-    const mesh = polyModeler.addPrimitive(shape);
+    const mesh = polyModeler.addPrimitive(shape, { x: 0, y: 0, z: 0 });
     polyModeler.selectModel(mesh);
     closeAll();
+    syncHierarchy();
   };
 
   const handleTransformButtonClick = (event: ReactMouseEvent<HTMLButtonElement>): void => {
@@ -166,11 +289,23 @@ export const AppRoot = () => {
 
     polyModeler.setColor(color);
     setSelectedColor(color);
+    setMaterialColor(color);
+  };
+
+  const handleMaterialColorChange = (color: string): void => {
+    setMaterialColor(color);
+    setSelectedColor(color);
+    polyModelerRef.current?.setColor(color);
+  };
+
+  const handleWireframeCheckbox = (checked: boolean): void => {
+    setWireframe(checked);
   };
 
   const handleDelete = (): void => {
     polyModelerRef.current?.deleteSelected();
     closeAll();
+    syncHierarchy();
   };
 
   const handleExport = (): void => {
@@ -179,6 +314,14 @@ export const AppRoot = () => {
 
   const handleWireframeToggle = (): void => {
     setWireframe(!wireframe);
+  };
+
+  const handleHierarchySelect = (id: string): void => {
+    polyModelerRef.current?.selectModelById(id);
+  };
+
+  const toggleSection = (section: keyof typeof collapsedSections): void => {
+    setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
   return (
@@ -267,6 +410,189 @@ export const AppRoot = () => {
         </button>
       </div>
 
+      <div id="side-panel-container" onClick={(event) => event.stopPropagation()}>
+        <div className={`side-panel-shell ${rightPanelVisible ? 'visible' : 'collapsed'}`}>
+          <div id="side-panel">
+            <div className="side-panel-header">
+              <h3>Scene Panel</h3>
+              <button
+                className="side-panel-close"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleRightPanel();
+                }}
+                aria-label={rightPanelVisible ? 'Hide side panel' : 'Show side panel'}
+              >
+                ✕
+              </button>
+            </div>
+
+            <section className="panel-section">
+              <button
+                className="section-header"
+                onClick={() => toggleSection('instructions')}
+                type="button"
+              >
+                <span>Instructions</span>
+                <span className={`section-arrow ${collapsedSections.instructions ? 'collapsed' : ''}`}>
+                  ▾
+                </span>
+              </button>
+              <div className={`section-body ${collapsedSections.instructions ? 'collapsed' : ''}`}>
+                <ul className="instruction-list">
+                  <li>Click objects to select</li>
+                  <li>Drag empty space to orbit</li>
+                  <li>Scroll or pinch to zoom</li>
+                  <li>Select a transform mode to enable the gizmo</li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="panel-section">
+              <button
+                className="section-header"
+                onClick={() => toggleSection('properties')}
+                type="button"
+              >
+                <span>Properties</span>
+                <span className={`section-arrow ${collapsedSections.properties ? 'collapsed' : ''}`}>
+                  ▾
+                </span>
+              </button>
+              <div className={`section-body ${collapsedSections.properties ? 'collapsed' : ''}`}>
+                <p className={`panel-status ${hasSelection ? 'active' : ''}`}>
+                  {hasSelection ? 'Object selected' : 'No selection'}
+                </p>
+                {selectionProperties ? (
+                  <div className="properties-grid">
+                    <div className="property-group">
+                      <span className="property-label">Position</span>
+                      {(['x', 'y', 'z'] as const).map((axis) => (
+                        <label key={`position-${axis}`} className="property-row">
+                          <span>{axis.toUpperCase()}</span>
+                          <input
+                            type="number"
+                            step="0.05"
+                            value={selectionProperties.position[axis]}
+                            onChange={(event) => handlePropertyInput('position', axis, event.target.value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="property-group">
+                      <span className="property-label">Rotation</span>
+                      {(['x', 'y', 'z'] as const).map((axis) => (
+                        <label key={`rotation-${axis}`} className="property-row">
+                          <span>{axis.toUpperCase()}</span>
+                          <input
+                            type="number"
+                            step="1"
+                            value={selectionProperties.rotation[axis]}
+                            onChange={(event) => handlePropertyInput('rotation', axis, event.target.value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="property-group">
+                      <span className="property-label">Scale</span>
+                      {(['x', 'y', 'z'] as const).map((axis) => (
+                        <label key={`scale-${axis}`} className="property-row">
+                          <span>{axis.toUpperCase()}</span>
+                          <input
+                            type="number"
+                            step="0.05"
+                            value={selectionProperties.scale[axis]}
+                            onChange={(event) => handlePropertyInput('scale', axis, event.target.value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="panel-empty">No object selected</p>
+                )}
+              </div>
+            </section>
+
+            <section className="panel-section">
+              <button
+                className="section-header"
+                onClick={() => toggleSection('materials')}
+                type="button"
+              >
+                <span>Materials</span>
+                <span className={`section-arrow ${collapsedSections.materials ? 'collapsed' : ''}`}>
+                  ▾
+                </span>
+              </button>
+              <div className={`section-body ${collapsedSections.materials ? 'collapsed' : ''}`}>
+                <div className="property-group">
+                  <span className="property-label">Appearance</span>
+                  <label className="material-row">
+                    <span>Color</span>
+                    <input
+                      type="color"
+                      value={materialColor}
+                      disabled={!hasSelection}
+                      onChange={(event) => handleMaterialColorChange(event.target.value)}
+                    />
+                  </label>
+                  <label className="material-row material-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={wireframe}
+                      onChange={(event) => handleWireframeCheckbox(event.target.checked)}
+                    />
+                    <span>Wireframe</span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section className="panel-section">
+              <button
+                className="section-header"
+                onClick={() => toggleSection('hierarchy')}
+                type="button"
+              >
+                <span>Hierarchy</span>
+                <span className={`section-arrow ${collapsedSections.hierarchy ? 'collapsed' : ''}`}>
+                  ▾
+                </span>
+              </button>
+              <div className={`section-body ${collapsedSections.hierarchy ? 'collapsed' : ''}`}>
+                {hierarchyItems.length > 0 ? (
+                  <ul className="hierarchy-list">
+                    {hierarchyItems.map((item) => (
+                      <li
+                        key={item.id}
+                        className={`hierarchy-item ${item.id === selectedMeshId ? 'active' : ''}`}
+                        onClick={() => handleHierarchySelect(item.id)}
+                      >
+                        {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="panel-empty">Scene hierarchy coming soon</p>
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <button
+          className={`side-panel-toggle ${rightPanelVisible ? 'expanded' : 'collapsed'}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleRightPanel();
+          }}
+          aria-label={rightPanelVisible ? 'Hide side panel' : 'Show side panel'}
+        >
+          <span className="toggle-icon">{rightPanelVisible ? '›' : '‹'}</span>
+        </button>
+      </div>
+
       <div
         id="shapes-panel"
         className={`panel ${activePanel === 'shapes' ? 'visible' : ''}`}
@@ -305,14 +631,11 @@ export const AppRoot = () => {
         </div>
       </div>
 
-      <div id="info">
-        <h3>PolyModeler</h3>
-        <p>Click to select</p>
-        <p>Drag to orbit</p>
-        <p>Scroll to zoom</p>
-        <div id="selection-info" className={hasSelection ? '' : 'empty'}>
-          {hasSelection ? 'Object selected' : 'No selection'}
-        </div>
+      <div
+        id="selection-pill"
+        className={`${hasSelection ? 'active' : ''} ${rightPanelVisible ? '' : 'panel-hidden'}`}
+      >
+        {hasSelection ? 'Object selected' : 'No selection'}
       </div>
     </>
   );

@@ -39,6 +39,7 @@ export class ModelManager {
     const geometry = GeometryFactory.create(type);
     const material = this.createMaterial();
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = type;
 
     this.configureMesh(mesh, position);
     this.models.push(mesh);

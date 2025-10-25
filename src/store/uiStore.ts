@@ -11,6 +11,7 @@ export interface UIState {
   transformMenuOpen: boolean;
   hasSelection: boolean;
   transformEnabled: boolean;
+  rightPanelVisible: boolean;
   setTransformMode: (mode: TransformMode) => void;
   togglePanel: (panel: Exclude<UIPanel, null>) => void;
   closePanels: () => void;
@@ -20,6 +21,8 @@ export interface UIState {
   closeAll: () => void;
   setHasSelection: (hasSelection: boolean) => void;
   setTransformEnabled: (enabled: boolean) => void;
+  toggleRightPanel: () => void;
+  setRightPanelVisible: (visible: boolean) => void;
 }
 
 export const useUIStore = create(
@@ -30,6 +33,7 @@ export const useUIStore = create(
     transformMenuOpen: false,
     hasSelection: false,
     transformEnabled: false,
+    rightPanelVisible: true,
     setTransformMode: (mode) => {
       set({
         transformMode: mode,
@@ -74,6 +78,12 @@ export const useUIStore = create(
     },
     setTransformEnabled: (enabled) => {
       set({ transformEnabled: enabled });
+    },
+    toggleRightPanel: () => {
+      set((state) => ({ rightPanelVisible: !state.rightPanelVisible }));
+    },
+    setRightPanelVisible: (visible) => {
+      set({ rightPanelVisible: visible });
     },
   }))
 );
