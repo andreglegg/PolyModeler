@@ -23,3 +23,7 @@ android/app/build/
 # Logs
 *.log
 npm-debug.log*
+
+# Documentation (except README)
+*.md
+!README.md
